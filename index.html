@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -78,6 +79,8 @@
             padding: 1rem;
             overflow-y: auto;
             background: #f4f4f9;
+            display: flex;
+            flex-direction: column-reverse; /* New messages will appear at the top */
         }
 
         .message {
@@ -98,9 +101,7 @@
         .message .timestamp {
             font-size: 0.8rem;
             color: #888;
-            position: absolute;
-            bottom: 5px;
-            right: 10px;
+            margin-left: 10px;
         }
 
         .message.reply {
@@ -142,6 +143,45 @@
         #message-input:focus {
             outline: none;
         }
+
+        #file-input {
+            border: none;
+            background-color: #f4f4f9;
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            margin-left: 10px;
+        }
+
+        .attachment-preview {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .attachment-preview img {
+            max-width: 100px;
+            max-height: 100px;
+            margin-right: 10px;
+        }
+
+        .attachment-preview a {
+            color: #3b5998;
+            text-decoration: none;
+        }
+
+        /* Reply Section */
+        #reply-container {
+            margin-top: 10px;
+            background: #f9f9f9;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .quoted-message {
+            font-size: 0.9rem;
+            color: #555;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -162,13 +202,17 @@
         <div class="chat-messages" id="messages"></div>
         <form id="message-form" onsubmit="sendMessage(event)">
             <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
+            <input type="file" id="file-input" accept="image/*,application/pdf,.docx" onchange="previewAttachment()">
             <button type="submit">Send</button>
         </form>
+        <div class="attachment-preview" id="attachment-preview"></div>
+        <div id="reply-container"></div>
     </div>
 
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-storage-compat.js"></script>
 
     <!-- Notification Sound -->
     <audio id="notification-sound" src="https://www.soundjay.com/button/beep-07.wav"></audio>
@@ -184,119 +228,115 @@
             messagingSenderId: "698996107816",
             appId: "1:698996107816:web:f800d5d337c35ff5b5e31d"
         };
-
-        // Initialize Firebase
         const app = firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+        const db = firebase.database(app);
 
-        let username = "";
-        let isNewMessage = false; // Flag to track if there's a new message
+        let username = "User1"; // Example username
+        let currentReplyTo = null;
+        let attachmentUrl = null;
 
-        // Check if username is stored in localStorage
-        window.onload = function() {
-            const storedUsername = localStorage.getItem("username");
-            if (storedUsername) {
-                username = storedUsername;
-                document.getElementById("user-display").innerText = `Logged in as: ${username}`;
-                document.getElementById("login-section").classList.add("hidden");
-                document.getElementById("chat-section").classList.remove("hidden");
-                listenForMessages(); // Only start listening for new messages after login
-            }
-        };
-
-        // Login Function
-        function login() {
-            username = document.getElementById("username").value.trim();
-            if (username) {
-                localStorage.setItem("username", username); // Save username to localStorage
-                document.getElementById("user-display").innerText = `Logged in as: ${username}`;
-                document.getElementById("login-section").classList.add("hidden");
-                document.getElementById("chat-section").classList.remove("hidden");
-                listenForMessages(); // Start listening for new messages after login
-            } else {
-                alert("Please enter a username to join the chat.");
-            }
-        }
-
-        // Send Message
-        function sendMessage(event) {
-            event.preventDefault();
-            const message = document.getElementById("message-input").value.trim();
-            if (message) {
-                const timestamp = new Date().toLocaleString();
-                db.ref("messages").push({
-                    username,
-                    message,
-                    timestamp,
-                    replyTo: null
-                });
-                document.getElementById("message-input").value = "";
-            }
-        }
-
-        // Reply to a message
-        function replyToMessage(messageId, originalMessage) {
-            const replyMessage = prompt("Enter your reply:");
-            if (replyMessage) {
-                const timestamp = new Date().toLocaleString();
-                db.ref("messages").push({
-                    username,
-                    message: replyMessage,
-                    timestamp,
-                    replyTo: originalMessage
-                });
-            }
-        }
-
-        // Listen for Messages and load history
+        // Listen for new messages
         function listenForMessages() {
-            const messagesContainer = document.getElementById("messages");
-
-            // Load all existing messages once (this is done only once on login)
-            db.ref("messages").once("value", (snapshot) => {
-                snapshot.forEach((childSnapshot) => {
-                    const msg = childSnapshot.val();
-                    displayMessage(msg, messagesContainer, true); // `true` for loading existing messages at the top
-                });
-            });
-
-            // Listen for new messages in real-time (this listens for new messages after login)
             db.ref("messages").on("child_added", (snapshot) => {
                 const msg = snapshot.val();
-                displayMessage(msg, messagesContainer, false); // `false` for new messages to appear at the top
+                const messageId = snapshot.key;
+                const messageElement = createMessageElement(msg, messageId);
 
-                // Only show "new message" if it's from another user during their session
-                if (msg.username !== username) {
-                    document.getElementById("notification-sound").play();
-                }
+                // Prepend new message to the chat
+                const messagesContainer = document.getElementById("messages");
+                messagesContainer.insertBefore(messageElement, messagesContainer.firstChild);
             });
         }
 
-        // Display the message with time and reply option
-        function displayMessage(msg, container, isInitialLoad) {
-            const messageElement = document.createElement("div");
-            messageElement.classList.add("message");
-            if (msg.username === username) messageElement.classList.add("self");
+        // Create message element with reply functionality
+        function createMessageElement(msg, messageId) {
+            const messageDiv = document.createElement("div");
+            messageDiv.classList.add("message");
+            if (msg.username === username) messageDiv.classList.add("self"); // User's own message
+            messageDiv.id = messageId;
 
+            const timestamp = new Date(msg.timestamp).toLocaleString();
+            let replyHtml = '';
+
+            // If the message is a reply, include the quoted message
             if (msg.replyTo) {
-                const replyMessageElement = document.createElement("div");
-                replyMessageElement.classList.add("message", "reply");
-                replyMessageElement.textContent = `Reply: ${msg.replyTo}`;
-                messageElement.appendChild(replyMessageElement);
+                const quotedMessage = document.getElementById(msg.replyTo);
+                replyHtml = `<div class="quoted-message">"${quotedMessage ? quotedMessage.querySelector('p').textContent : 'Message not found.'}"</div>`;
             }
 
-            messageElement.innerHTML += `
-                <p><strong>${msg.username}</strong>: ${msg.message}</p>
-                <p class="timestamp">${msg.timestamp}</p>
-                <button onclick="replyToMessage('${msg.timestamp}', '${msg.message}')">Reply</button>
+            messageDiv.innerHTML = `
+                ${replyHtml}
+                <strong>${msg.username}</strong><br>
+                <p>${msg.message}</p>
+                ${msg.attachmentUrl ? `<a href="${msg.attachmentUrl}" target="_blank">View Attachment</a>` : ""}
+                <div class="timestamp">${timestamp}</div>
+                <button onclick="replyToMessage('${messageId}')">Reply</button>
             `;
 
-            if (isInitialLoad) {
-                container.prepend(messageElement); // Prepend new messages during history load
-            } else {
-                container.insertBefore(messageElement, container.firstChild); // Insert new messages at the top
+            return messageDiv;
+        }
+
+        // Handle message send event
+        function sendMessage(event) {
+            event.preventDefault();
+
+            const messageInput = document.getElementById("message-input");
+            const messageText = messageInput.value.trim();
+            if (messageText === "" && !attachmentUrl) return;
+
+            const messageData = {
+                username,
+                message: messageText,
+                timestamp: Date.now(),
+                replyTo: currentReplyTo,
+                attachmentUrl,
+            };
+
+            // Save message to Firebase
+            db.ref("messages").push(messageData);
+
+            // Reset form
+            messageInput.value = "";
+            attachmentUrl = null;
+            document.getElementById("attachment-preview").innerHTML = "";
+        }
+
+        // Handle file attachment preview
+        function previewAttachment() {
+            const fileInput = document.getElementById("file-input");
+            const file = fileInput.files[0];
+
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    attachmentUrl = event.target.result; // Save file URL
+                    const preview = document.getElementById("attachment-preview");
+                    preview.innerHTML = `<img src="${attachmentUrl}" alt="Attachment Preview">`;
+                };
+                reader.readAsDataURL(file);
             }
-            container.scrollTop = 0; // Keep scroll at top for new messages
+        }
+
+        // Reply to a specific message
+        function replyToMessage(messageId) {
+            currentReplyTo = messageId;
+            const messageText = document.getElementById(messageId).querySelector('p').textContent;
+            const replyContainer = document.getElementById("reply-container");
+            replyContainer.innerHTML = `<div class="quoted-message">Replying to: "${messageText}"</div>`;
+        }
+
+        // Login and show chat
+        function login() {
+            username = document.getElementById("username").value;
+            if (!username) return alert("Please enter a username.");
+
+            // Display the chat interface
+            document.getElementById("login-section").classList.add("hidden");
+            document.getElementById("chat-section").classList.remove("hidden");
+            document.getElementById("user-display").innerText = `Logged in as: ${username}`;
+
+            // Start listening for messages
+            listenForMessages();
         }
     </script>
 </body>
