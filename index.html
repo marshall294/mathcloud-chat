@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Responsive Chat Platform</title>
+    <style>
+        /* Global Styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f4f4f9;
+        }
+
+        /* Login Section */
+        .login {
+            display: flex;
+            flex-direction: column;
+            text-align: center;
+            padding: 2rem;
+            border-radius: 10px;
+            background: white;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .login input, .login button {
+            padding: 1rem;
+            margin: 10px 0;
+            width: 100%;
+            font-size: 1rem;
+            border: none;
+            border-radius: 5px;
+        }
+
+        .login button {
+            background: #3b5998;
+            color: white;
+            cursor: pointer;
+        }
+
+        /* Chat Container */
+        .hidden {
+            display: none;
+        }
+
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-width: 600px;
+            height: 90vh;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        header {
+            background: #3b5998;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .chat-messages {
+            flex-grow: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            background: #f4f4f9;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            word-wrap: break-word;
+        }
+
+        .message.self {
+            background: #d1ffd4;
+            align-self: flex-end;
+        }
+
+        #message-form {
+            display: flex;
+            padding: 1rem;
+            background: #ffffff;
+            border-top: 1px solid #ddd;
+        }
+
+        #message-input {
+            flex-grow: 1;
+            padding: 1rem;
+            border: none;
+            border-radius: 5px;
+            margin-right: 10px;
+            background: #f4f4f9;
+        }
+
+        #message-input:focus {
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Section -->
+    <div class="login" id="login-section">
+        <h2>Join the Chat</h2>
+        <input type="text" id="username" placeholder="Enter your username" required>
+        <button onclick="login()">Join Chat</button>
+    </div>
+    
+    <!-- Chat Section -->
+    <div class="chat-container hidden" id="chat-section">
+        <header>
+            <h2>Chat Room</h2>
+            <p id="user-display"></p>
+        </header>
+        <div class="chat-messages" id="messages"></div>
+        <form id="message-form" onsubmit="sendMessage(event)">
+            <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+
+    <!-- Notification Sound -->
+    <audio id="notification-sound" src="https://www.soundjay.com/button/beep-07.wav"></audio>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAhLGxNim7cCSR6M6Om1ont52K8KV_bteY",
+            authDomain: "jobber-6eacc.firebaseapp.com",
+            databaseURL: "https://jobber-6eacc-default-rtdb.firebaseio.com",
+            projectId: "jobber-6eacc",
+            storageBucket: "jobber-6eacc.appspot.com",
+            messagingSenderId: "698996107816",
+            appId: "1:698996107816:web:f800d5d337c35ff5b5e31d"
+        };
+
+        // Initialize Firebase
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        let username = "";
+
+        // Login Function
+        function login() {
+            username = document.getElementById("username").value.trim();
+            if (username) {
+                document.getElementById("user-display").innerText = `Logged in as: ${username}`;
+                document.getElementById("login-section").classList.add("hidden");
+                document.getElementById("chat-section").classList.remove("hidden");
+                listenForMessages();
+            } else {
+                alert("Please enter a username to join the chat.");
+            }
+        }
+
+        // Send Message
+        function sendMessage(event) {
+            event.preventDefault();
+            const message = document.getElementById("message-input").value.trim();
+            if (message) {
+                db.ref("messages").push({
+                    username,
+                    message,
+                    timestamp: Date.now()
+                });
+                document.getElementById("message-input").value = "";
+            }
+        }
+
+        // Listen for Messages
+        function listenForMessages() {
+            const messagesContainer = document.getElementById("messages");
+            db.ref("messages").on("child_added", (snapshot) => {
+                const msg = snapshot.val();
+                const messageElement = document.createElement("div");
+                messageElement.classList.add("message");
+                if (msg.username === username) {
+                    messageElement.classList.add("self");
+                }
+                messageElement.innerHTML = `<strong>${msg.username}:</strong> ${msg.message}`;
+                messagesContainer.appendChild(messageElement);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+                // Play notification sound and show alert
+                if (msg.username !== username) {
+                    document.getElementById("notification-sound").play();
+                    alert(`New message from ${msg.username}: ${msg.message}`);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
