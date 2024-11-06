@@ -87,11 +87,40 @@
             background: #ffffff;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             word-wrap: break-word;
+            position: relative;
         }
 
         .message.self {
             background: #d1ffd4;
             align-self: flex-end;
+        }
+
+        .message .timestamp {
+            font-size: 0.8rem;
+            color: #888;
+            position: absolute;
+            bottom: 5px;
+            right: 10px;
+        }
+
+        .message.reply {
+            background: #f1f1f1;
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+
+        .message button {
+            background: #3b5998;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            font-size: 0.9rem;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .message button:hover {
+            background: #1a2f77;
         }
 
         #message-form {
@@ -126,7 +155,8 @@
     <!-- Chat Section -->
     <div class="chat-container hidden" id="chat-section">
         <header>
-            <h2>Chat Room</h2>
+            <h2>Secure Mathcloud Tutorial Chat Room</h2>
+            <p> No Phone number or Email needed, just your preferred username that is known by the teacher</p>
             <p id="user-display"></p>
         </header>
         <div class="chat-messages" id="messages"></div>
@@ -160,15 +190,29 @@
         const db = firebase.database();
 
         let username = "";
+        let isNewMessage = false; // Flag to track if there's a new message
+
+        // Check if username is stored in localStorage
+        window.onload = function() {
+            const storedUsername = localStorage.getItem("username");
+            if (storedUsername) {
+                username = storedUsername;
+                document.getElementById("user-display").innerText = `Logged in as: ${username}`;
+                document.getElementById("login-section").classList.add("hidden");
+                document.getElementById("chat-section").classList.remove("hidden");
+                listenForMessages(); // Only start listening for new messages after login
+            }
+        };
 
         // Login Function
         function login() {
             username = document.getElementById("username").value.trim();
             if (username) {
+                localStorage.setItem("username", username); // Save username to localStorage
                 document.getElementById("user-display").innerText = `Logged in as: ${username}`;
                 document.getElementById("login-section").classList.add("hidden");
                 document.getElementById("chat-section").classList.remove("hidden");
-                listenForMessages();
+                listenForMessages(); // Start listening for new messages after login
             } else {
                 alert("Please enter a username to join the chat.");
             }
@@ -179,35 +223,80 @@
             event.preventDefault();
             const message = document.getElementById("message-input").value.trim();
             if (message) {
+                const timestamp = new Date().toLocaleString();
                 db.ref("messages").push({
                     username,
                     message,
-                    timestamp: Date.now()
+                    timestamp,
+                    replyTo: null
                 });
                 document.getElementById("message-input").value = "";
             }
         }
 
-        // Listen for Messages
+        // Reply to a message
+        function replyToMessage(messageId, originalMessage) {
+            const replyMessage = prompt("Enter your reply:");
+            if (replyMessage) {
+                const timestamp = new Date().toLocaleString();
+                db.ref("messages").push({
+                    username,
+                    message: replyMessage,
+                    timestamp,
+                    replyTo: originalMessage
+                });
+            }
+        }
+
+        // Listen for Messages and load history
         function listenForMessages() {
             const messagesContainer = document.getElementById("messages");
+
+            // Load all existing messages once (this is done only once on login)
+            db.ref("messages").once("value", (snapshot) => {
+                snapshot.forEach((childSnapshot) => {
+                    const msg = childSnapshot.val();
+                    displayMessage(msg, messagesContainer, true); // `true` for loading existing messages at the top
+                });
+            });
+
+            // Listen for new messages in real-time (this listens for new messages after login)
             db.ref("messages").on("child_added", (snapshot) => {
                 const msg = snapshot.val();
-                const messageElement = document.createElement("div");
-                messageElement.classList.add("message");
-                if (msg.username === username) {
-                    messageElement.classList.add("self");
-                }
-                messageElement.innerHTML = `<strong>${msg.username}:</strong> ${msg.message}`;
-                messagesContainer.appendChild(messageElement);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                displayMessage(msg, messagesContainer, false); // `false` for new messages to appear at the top
 
-                // Play notification sound and show alert
+                // Only show "new message" if it's from another user during their session
                 if (msg.username !== username) {
                     document.getElementById("notification-sound").play();
-                    alert(`New message from ${msg.username}: ${msg.message}`);
                 }
             });
+        }
+
+        // Display the message with time and reply option
+        function displayMessage(msg, container, isInitialLoad) {
+            const messageElement = document.createElement("div");
+            messageElement.classList.add("message");
+            if (msg.username === username) messageElement.classList.add("self");
+
+            if (msg.replyTo) {
+                const replyMessageElement = document.createElement("div");
+                replyMessageElement.classList.add("message", "reply");
+                replyMessageElement.textContent = `Reply: ${msg.replyTo}`;
+                messageElement.appendChild(replyMessageElement);
+            }
+
+            messageElement.innerHTML += `
+                <p><strong>${msg.username}</strong>: ${msg.message}</p>
+                <p class="timestamp">${msg.timestamp}</p>
+                <button onclick="replyToMessage('${msg.timestamp}', '${msg.message}')">Reply</button>
+            `;
+
+            if (isInitialLoad) {
+                container.prepend(messageElement); // Prepend new messages during history load
+            } else {
+                container.insertBefore(messageElement, container.firstChild); // Insert new messages at the top
+            }
+            container.scrollTop = 0; // Keep scroll at top for new messages
         }
     </script>
 </body>
