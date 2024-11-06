@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -80,7 +79,7 @@
             overflow-y: auto;
             background: #f4f4f9;
             display: flex;
-            flex-direction: column-reverse; /* New messages will appear at the top */
+            flex-direction: column-reverse; /* New messages appear at the top */
         }
 
         .message {
@@ -196,7 +195,7 @@
     <div class="chat-container hidden" id="chat-section">
         <header>
             <h2>Secure Mathcloud Tutorial Chat Room</h2>
-            <p> No Phone number or Email needed, just your preferred username that is known by the teacher</p>
+            <p>No Phone number or Email needed, just your preferred username that is known by the teacher</p>
             <p id="user-display"></p>
         </header>
         <div class="chat-messages" id="messages"></div>
@@ -289,50 +288,56 @@
                 message: messageText,
                 timestamp: Date.now(),
                 replyTo: currentReplyTo,
-                attachmentUrl,
+                attachmentUrl
             };
 
-            // Save message to Firebase
+            // Store the message in Firebase
             db.ref("messages").push(messageData);
 
-            // Reset form
+            // Reset inputs
             messageInput.value = "";
+            currentReplyTo = null;
             attachmentUrl = null;
             document.getElementById("attachment-preview").innerHTML = "";
+            document.getElementById("reply-container").innerHTML = "";
         }
 
-        // Handle file attachment preview
+        // Set up reply functionality
+        function replyToMessage(messageId) {
+            currentReplyTo = messageId;
+            const messageElement = document.getElementById(messageId);
+            const quotedText = messageElement.querySelector("p").textContent;
+
+            document.getElementById("reply-container").innerHTML = `
+                Replying to: "${quotedText}"
+            `;
+        }
+
+        // Handle file attachment and upload to Firebase Storage
         function previewAttachment() {
             const fileInput = document.getElementById("file-input");
             const file = fileInput.files[0];
-
             if (file) {
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    attachmentUrl = event.target.result; // Save file URL
-                    const preview = document.getElementById("attachment-preview");
-                    preview.innerHTML = `<img src="${attachmentUrl}" alt="Attachment Preview">`;
-                };
-                reader.readAsDataURL(file);
+                const storageRef = firebase.storage().ref(`attachments/${file.name}`);
+                storageRef.put(file).then(() => {
+                    storageRef.getDownloadURL().then((url) => {
+                        attachmentUrl = url;
+                        document.getElementById("attachment-preview").innerHTML = `<img src="${attachmentUrl}" alt="Attachment Preview">`;
+                    });
+                });
             }
         }
 
-        // Reply to a specific message
-        function replyToMessage(messageId) {
-            currentReplyTo = messageId;
-            const messageText = document.getElementById(messageId).querySelector('p').textContent;
-            const replyContainer = document.getElementById("reply-container");
-            replyContainer.innerHTML = `<div class="quoted-message">Replying to: "${messageText}"</div>`;
-        }
-
-        // Login and show chat
+        // Login function
         function login() {
-            username = document.getElementById("username").value;
-            if (!username) return alert("Please enter a username.");
+            const usernameInput = document.getElementById("username");
+            username = usernameInput.value.trim();
+            if (username === "") return;
 
-            // Display the chat interface
+            // Hide login and show chat section
             document.getElementById("login-section").classList.add("hidden");
             document.getElementById("chat-section").classList.remove("hidden");
+
             document.getElementById("user-display").innerText = `Logged in as: ${username}`;
 
             // Start listening for messages
